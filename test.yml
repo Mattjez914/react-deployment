@@ -1,0 +1,58 @@
+---
+
+- hosts: all
+  become: true
+  pre_tasks:
+
+  - name: update repo cache
+    tags: always
+    apt:
+      update_cache: yes
+    changed_when: false
+    when: ansible_distribution in ["Debian","Ubuntu"] 
+
+
+- hosts: all
+  become: true
+  tasks:
+
+  - name: add ssh key for deployer
+    authorized_key:
+      user: deployer
+      key: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEQDZVNBDq5C+kYuGboRz8crfZPwUsMrzJIp0Sibn1Pg ansible"
+
+  - name: generate sshd_config file from template
+    tags: ssh
+    template: 
+      src: "{{ ssh_template_file }}"
+      dest: /etc/ssh/sshd_config
+      owner: root
+      group: root
+      mode: 0644
+    notify: restart_sshd
+
+  handlers: 
+    - name: restart_sshd
+      service:
+        name: sshd
+        state: restarted
+
+  
+- hosts: frontend_servers
+  become: true
+  tasks:
+
+  - name: install nginx package
+    tags: nginx,ubuntu
+    package:
+      name: 
+        - "{{ nginx_package_name }}"
+      state: latest
+      
+      
+  - name: start and enable nginx
+    tags: nginx
+    service:
+      name: "{{ nginx_service }}"
+      state: started
+      enabled: yes

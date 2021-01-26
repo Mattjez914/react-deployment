@@ -1,0 +1,22 @@
+---
+
+- hosts: all
+  become: true
+  pre_tasks:
+
+  - name: update repo cache
+    tags: always
+    apt:
+      update_cache: yes
+    changed_when: false
+    when: ansible_distribution in ["Debian","Ubuntu"] 
+
+- hosts: all
+  become: true
+  roles:
+    - base
+    
+- hosts: web_servers
+  become: true
+  roles:
+    - web_servers
