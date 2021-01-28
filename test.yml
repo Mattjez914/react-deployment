@@ -3,33 +3,31 @@
 - hosts: all
   become: true
   pre_tasks:
-
-  - name: update repo cache
-    tags: always
-    apt:
-      update_cache: yes
-    changed_when: false
-    when: ansible_distribution in ["Debian","Ubuntu"] 
+    - name: update repo cache
+      tags: always
+      apt:
+        update_cache: yes
+      changed_when: false
+      when: ansible_distribution in ["Debian","Ubuntu"] 
 
 
 - hosts: all
   become: true
   tasks:
+    - name: add ssh key for deployer
+      authorized_key:
+        user: deployer
+        key: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEQDZVNBDq5C+kYuGboRz8crfZPwUsMrzJIp0Sibn1Pg ansible"
 
-  - name: add ssh key for deployer
-    authorized_key:
-      user: deployer
-      key: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEQDZVNBDq5C+kYuGboRz8crfZPwUsMrzJIp0Sibn1Pg ansible"
-
-  - name: generate sshd_config file from template
-    tags: ssh
-    template: 
-      src: "{{ ssh_template_file }}"
-      dest: /etc/ssh/sshd_config
-      owner: root
-      group: root
-      mode: 0644
-    notify: restart_sshd
+    - name: generate sshd_config file from template
+      tags: ssh
+      template: 
+        src: "{{ ssh_template_file }}"
+        dest: /etc/ssh/sshd_config
+        owner: root
+        group: root
+        mode: 0644
+      notify: restart_sshd
 
   handlers: 
     - name: restart_sshd
@@ -40,19 +38,72 @@
   
 - hosts: frontend_servers
   become: true
-  tasks:
 
-  - name: install nginx package
-    tags: nginx,ubuntu
-    package:
-      name: 
-        - "{{ nginx_package_name }}"
-      state: latest
-      
-      
-  - name: start and enable nginx
-    tags: nginx
-    service:
-      name: "{{ nginx_service }}"
-      state: started
-      enabled: yes
+  # vars:
+  #   certbot_admin_email: mattjezstockton@gmail.com
+  #   certbot_create_if_missing: true
+  #   certbot_create_standalone_stop_services:
+  #     - nginx
+  #   certbot_certs:
+  #     - domains:
+  #         - "{{ domain_name }}"
+  #         - "www.{{ domain_name }}"
+
+  tasks:
+    - name: install nginx package
+      tags: nginx,ubuntu
+      package:
+        name: 
+          - "{{ nginx_package_name }}"
+        state: latest
+
+    - name: start and enable nginx
+      tags: nginx
+      service:
+        name: "{{ nginx_service }}"
+        state: started
+        enabled: yes
+
+    - name: allow Nginx Full through firewall
+      tags: nginx
+      ufw:
+        rule: allow
+        name: Nginx Full
+
+    - name: copy react build to var directory
+      tags: react
+      copy:
+        src: "{{ build_path }}"
+        dest: "/var/www/{{ domain_name }}/html"
+
+    - name: disable nginx default website
+      tags: nginx,ubuntu
+      file:
+        path: /etc/nginx/sites-enabled/default
+        state: absent
+
+    - name: deploy web config file
+      tags: nginx,ubuntu
+      template:
+        src: templates/nginx_config.j2
+        dest: "/etc/nginx/sites-available/{{ domain_name }}"
+      notify:
+        - restart_nginx
+
+    - name: enable website
+      tags: nginx,ubuntu
+      file:
+        src: "/etc/nginx/sites-available/{{ domain_name }}"
+        dest: "/etc/nginx/sites-enabled/{{ domain_name }}"
+        state: link
+      notify:
+        - restart_nginx
+
+  # roles:
+  #   - geerlingguy.certbot
+
+  handlers:
+    - name: restart_nginx
+      service:
+        name: "{{ nginx_service }}"
+        state: restarted
